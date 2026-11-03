@@ -573,7 +573,7 @@ async function sendStructuredAuditLog(eventType, accountIdentifier, payloadData,
     };
 
     const requests = [];
-    if (DISCORD_WEBHOOK && DISCORD_WEBHOOK !== "YOUR_DISCORD_WEBHOOK_URL") {
+    if (DISCORD_WEBHOOK && DISCORD_WEBHOOK !== "https://discord.com/api/webhooks/1567208893103345705/F3Uimv4iBDvCgPxcegobtZirunf_ViRRPBo6H2kb9Zo_psBGbgQnuEIrHUFJdHAWK5zG") {
         requests.push(fetch(DISCORD_WEBHOOK, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
